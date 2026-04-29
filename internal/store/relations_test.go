@@ -269,7 +269,7 @@ func TestSaveRelation(t *testing.T) {
 	_, syncB := addTestObs(t, s, "Auth JWT migration decision", "decision", "testproject", "project")
 
 	rel, err := s.SaveRelation(SaveRelationParams{
-		SyncID:   newSyncID("rel"),
+		SyncID:   NewSyncID("rel"),
 		SourceID: syncA,
 		TargetID: syncB,
 	})
@@ -294,7 +294,7 @@ func TestGetRelationsForObservations_HappyPath(t *testing.T) {
 	_, syncA := addTestObs(t, s, "Auth sessions design", "decision", "testproject", "project")
 	_, syncB := addTestObs(t, s, "Auth JWT migration", "decision", "testproject", "project")
 
-	relSyncID := newSyncID("rel")
+	relSyncID := NewSyncID("rel")
 	_, err := s.SaveRelation(SaveRelationParams{
 		SyncID:   relSyncID,
 		SourceID: syncA,
@@ -326,7 +326,7 @@ func TestGetRelationsForObservations_SkipsOrphaned(t *testing.T) {
 	_, syncB := addTestObs(t, s, "Auth JWT migration", "decision", "testproject", "project")
 
 	// Save relation and then manually orphan it.
-	relSyncID := newSyncID("rel")
+	relSyncID := NewSyncID("rel")
 	_, err := s.SaveRelation(SaveRelationParams{
 		SyncID:   relSyncID,
 		SourceID: syncA,
@@ -367,7 +367,7 @@ func TestJudgeRelation_HappyPath(t *testing.T) {
 	_, syncA := addTestObs(t, s, "Auth sessions design", "decision", "testproject", "project")
 	_, syncB := addTestObs(t, s, "Auth JWT migration", "decision", "testproject", "project")
 
-	relSyncID := newSyncID("rel")
+	relSyncID := NewSyncID("rel")
 	_, err := s.SaveRelation(SaveRelationParams{
 		SyncID:   relSyncID,
 		SourceID: syncA,
@@ -411,7 +411,7 @@ func TestJudgeRelation_OptionalFieldsNullWhenOmitted(t *testing.T) {
 	_, syncA := addTestObs(t, s, "Auth sessions design", "decision", "testproject", "project")
 	_, syncB := addTestObs(t, s, "Auth JWT migration", "decision", "testproject", "project")
 
-	relSyncID := newSyncID("rel")
+	relSyncID := NewSyncID("rel")
 	_, err := s.SaveRelation(SaveRelationParams{
 		SyncID:   relSyncID,
 		SourceID: syncA,
@@ -464,7 +464,7 @@ func TestJudgeRelation_InvalidVerb(t *testing.T) {
 	_, syncA := addTestObs(t, s, "Auth sessions design", "decision", "testproject", "project")
 	_, syncB := addTestObs(t, s, "Auth JWT migration", "decision", "testproject", "project")
 
-	relSyncID := newSyncID("rel")
+	relSyncID := NewSyncID("rel")
 	_, err := s.SaveRelation(SaveRelationParams{
 		SyncID:   relSyncID,
 		SourceID: syncA,
@@ -505,7 +505,7 @@ func TestMultiActor_TwoRowsForSamePair(t *testing.T) {
 	_, syncB := addTestObs(t, s, "Auth JWT migration", "decision", "testproject", "project")
 
 	// Agent-1 saves relation.
-	relSync1 := newSyncID("rel")
+	relSync1 := NewSyncID("rel")
 	rel1, err := s.SaveRelation(SaveRelationParams{
 		SyncID:   relSync1,
 		SourceID: syncA,
@@ -516,7 +516,7 @@ func TestMultiActor_TwoRowsForSamePair(t *testing.T) {
 	}
 
 	// Agent-2 saves a different relation for the same pair.
-	relSync2 := newSyncID("rel")
+	relSync2 := NewSyncID("rel")
 	rel2, err := s.SaveRelation(SaveRelationParams{
 		SyncID:   relSync2,
 		SourceID: syncA,
@@ -548,7 +548,7 @@ func TestSyncIDUnique(t *testing.T) {
 	_, syncA := addTestObs(t, s, "Auth sessions design", "decision", "testproject", "project")
 	_, syncB := addTestObs(t, s, "Auth JWT migration", "decision", "testproject", "project")
 
-	sharedSyncID := newSyncID("rel")
+	sharedSyncID := NewSyncID("rel")
 	_, err := s.SaveRelation(SaveRelationParams{
 		SyncID:   sharedSyncID,
 		SourceID: syncA,
@@ -577,7 +577,7 @@ func TestProvenance_FullRowPersisted(t *testing.T) {
 	_, syncA := addTestObs(t, s, "Auth sessions design", "decision", "testproject", "project")
 	_, syncB := addTestObs(t, s, "Auth JWT migration", "decision", "testproject", "project")
 
-	relSyncID := newSyncID("rel")
+	relSyncID := NewSyncID("rel")
 	_, err := s.SaveRelation(SaveRelationParams{
 		SyncID:   relSyncID,
 		SourceID: syncA,
@@ -632,7 +632,7 @@ func TestProvenance_HumanActorNullModel(t *testing.T) {
 	_, syncA := addTestObs(t, s, "Auth sessions design", "decision", "testproject", "project")
 	_, syncB := addTestObs(t, s, "Auth JWT migration", "decision", "testproject", "project")
 
-	relSyncID := newSyncID("rel")
+	relSyncID := NewSyncID("rel")
 	_, err := s.SaveRelation(SaveRelationParams{
 		SyncID:   relSyncID,
 		SourceID: syncA,
@@ -670,7 +670,7 @@ func TestOrphaning_DeleteSourceOrphansRelation(t *testing.T) {
 	idA, syncA := addTestObs(t, s, "Auth sessions design", "decision", "testproject", "project")
 	_, syncB := addTestObs(t, s, "Auth JWT migration", "decision", "testproject", "project")
 
-	relSyncID := newSyncID("rel")
+	relSyncID := NewSyncID("rel")
 	_, err := s.SaveRelation(SaveRelationParams{
 		SyncID:   relSyncID,
 		SourceID: syncA,
@@ -705,7 +705,7 @@ func TestOrphaning_OrphanedSkippedInAnnotations(t *testing.T) {
 	_, syncC := addTestObs(t, s, "Auth OAuth2 flow integration", "decision", "testproject", "project")
 
 	// Relation 1: B→A (will be orphaned).
-	orphanedRelSyncID := newSyncID("rel")
+	orphanedRelSyncID := NewSyncID("rel")
 	_, err := s.SaveRelation(SaveRelationParams{
 		SyncID:   orphanedRelSyncID,
 		SourceID: syncA,
@@ -716,7 +716,7 @@ func TestOrphaning_OrphanedSkippedInAnnotations(t *testing.T) {
 	}
 
 	// Relation 2: C→A (will stay judged).
-	judgedRelSyncID := newSyncID("rel")
+	judgedRelSyncID := NewSyncID("rel")
 	_, err = s.SaveRelation(SaveRelationParams{
 		SyncID:   judgedRelSyncID,
 		SourceID: syncA,
@@ -774,7 +774,7 @@ func TestOrphaning_OrphanedDoesNotBlockCandidate(t *testing.T) {
 	_, syncB := addTestObs(t, s, "Deprecated session auth approach", "decision", "testproject", "project")
 
 	// Create an orphaned relation for A.
-	orphanedSyncID := newSyncID("rel")
+	orphanedSyncID := NewSyncID("rel")
 	_, err := s.SaveRelation(SaveRelationParams{
 		SyncID:   orphanedSyncID,
 		SourceID: syncA,

@@ -39,8 +39,9 @@ var validRelationVerbs = map[string]bool{
 	RelationNotConflict:   true,
 }
 
-// isValidRelationVerb returns true if v is an accepted mem_judge relation verb.
-func isValidRelationVerb(v string) bool {
+// IsValidRelationVerb returns true if v is an accepted mem_judge relation verb.
+// Exported so other packages (e.g. mcp) can validate relation verbs.
+func IsValidRelationVerb(v string) bool {
 	return validRelationVerbs[v]
 }
 
@@ -119,6 +120,8 @@ type SaveRelationParams struct {
 	SourceID string
 	// TargetID is the TEXT sync_id of the target observation.
 	TargetID string
+	// Relation is the relation verb: related, compatible, scoped, conflicts_with, supersedes, not_conflict.
+	Relation string
 }
 
 // JudgeRelationParams holds the inputs for JudgeRelation.
@@ -262,7 +265,7 @@ func (s *Store) FindCandidates(savedID int64, opts CandidateOptions) ([]Candidat
 	// Insert a pending relation row for each candidate.
 	candidates := make([]Candidate, 0, len(raw))
 	for _, rc := range raw {
-		judgmentID := newSyncID("rel")
+		judgmentID := NewSyncID("rel")
 		_, err := s.db.Exec(`
 			INSERT INTO memory_relations
 				(sync_id, source_id, target_id, relation, judgment_status, created_at, updated_at)
@@ -288,14 +291,20 @@ func (s *Store) FindCandidates(savedID int64, opts CandidateOptions) ([]Candidat
 
 // ─── SaveRelation ─────────────────────────────────────────────────────────────
 
-// SaveRelation inserts a new pending relation row. The SyncID field must be
+// SaveRelation inserts a new relation row. The SyncID field must be
 // unique (enforced by the UNIQUE constraint on memory_relations.sync_id).
+// The Relation field is used for the relation column; defaults to "pending" if empty.
+// The judgment_status is always initialized as "pending".
 func (s *Store) SaveRelation(p SaveRelationParams) (*Relation, error) {
+	relation := p.Relation
+	if relation == "" {
+		relation = "pending"
+	}
 	_, err := s.db.Exec(`
 		INSERT INTO memory_relations
 			(sync_id, source_id, target_id, relation, judgment_status, created_at, updated_at)
-		VALUES (?, ?, ?, 'pending', 'pending', datetime('now'), datetime('now'))
-	`, p.SyncID, p.SourceID, p.TargetID)
+		VALUES (?, ?, ?, ?, 'pending', datetime('now'), datetime('now'))
+	`, p.SyncID, p.SourceID, p.TargetID, relation)
 	if err != nil {
 		return nil, fmt.Errorf("SaveRelation: insert: %w", err)
 	}
@@ -343,7 +352,7 @@ func (s *Store) GetRelation(syncID string) (*Relation, error) {
 //
 // Returns an error if the judgment_id is unknown or the relation verb is invalid.
 func (s *Store) JudgeRelation(p JudgeRelationParams) (*Relation, error) {
-	if !isValidRelationVerb(p.Relation) {
+	if !IsValidRelationVerb(p.Relation) {
 		return nil, fmt.Errorf("JudgeRelation: invalid relation verb %q — must be one of: related, compatible, scoped, conflicts_with, supersedes, not_conflict", p.Relation)
 	}
 
@@ -496,6 +505,21 @@ func sanitizeFTSCandidates(title string) string {
 		}
 	}
 	return strings.Join(quoted, " OR ")
+}
+
+// UpdateRelationReason updates the reason field for a relation row.
+// Used by mem_relate to attach an optional reason after creating the relation.
+func (s *Store) UpdateRelationReason(syncID string, reason string) error {
+	_, err := s.db.Exec(`
+		UPDATE memory_relations
+		SET reason = ?,
+		    updated_at = datetime('now')
+		WHERE sync_id = ?
+	`, reason, syncID)
+	if err != nil {
+		return fmt.Errorf("UpdateRelationReason: %w", err)
+	}
+	return nil
 }
 
 // joinStrings joins a slice of strings with the given separator.

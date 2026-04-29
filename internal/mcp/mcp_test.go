@@ -230,6 +230,123 @@ func TestHandleCapturePassiveWithNoLearningSection(t *testing.T) {
 	}
 }
 
+func TestHandleRelate_HappyPath(t *testing.T) {
+	s := newMCPTestStore(t)
+	if err := s.CreateSession("ses-rel-test", "testproject", "/tmp"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	// Seed two observations to relate.
+	obs1ID, err := s.AddObservation(store.AddObservationParams{
+		SessionID: "ses-rel-test",
+		Type:      "decision",
+		Title:     "Auth with sessions",
+		Content:   "Old auth approach",
+		Project:   "testproject",
+	})
+	if err != nil {
+		t.Fatalf("AddObservation obs1: %v", err)
+	}
+	obs1, _ := s.GetObservation(obs1ID)
+
+	obs2ID, err := s.AddObservation(store.AddObservationParams{
+		SessionID: "ses-rel-test",
+		Type:      "decision",
+		Title:     "Auth with JWT",
+		Content:   "New auth approach",
+		Project:   "testproject",
+	})
+	if err != nil {
+		t.Fatalf("AddObservation obs2: %v", err)
+	}
+	obs2, _ := s.GetObservation(obs2ID)
+
+	h := handleRelate(s)
+	req := mcppkg.CallToolRequest{Params: mcppkg.CallToolParams{Arguments: map[string]any{
+		"source_sync_id": obs1.SyncID,
+		"target_sync_id": obs2.SyncID,
+		"relation":        "related",
+		"reason":          "both discuss auth approaches",
+	}}}
+
+	res, err := h(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected tool error: %s", callResultText(t, res))
+	}
+
+	text := callResultText(t, res)
+	if !strings.Contains(text, "relation created") {
+		t.Fatalf("expected success message, got %q", text)
+	}
+}
+
+func TestHandleRelate_InvalidRelationVerb(t *testing.T) {
+	s := newMCPTestStore(t)
+	if err := s.CreateSession("ses-rel-test", "testproject", "/tmp"); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	obs1ID, err := s.AddObservation(store.AddObservationParams{
+		SessionID: "ses-rel-test",
+		Type:      "decision",
+		Title:     "Auth with sessions",
+		Content:   "Old auth approach",
+		Project:   "testproject",
+	})
+	if err != nil {
+		t.Fatalf("AddObservation obs1: %v", err)
+	}
+	obs1, _ := s.GetObservation(obs1ID)
+
+	obs2ID, err := s.AddObservation(store.AddObservationParams{
+		SessionID: "ses-rel-test",
+		Type:      "decision",
+		Title:     "Auth with JWT",
+		Content:   "New auth approach",
+		Project:   "testproject",
+	})
+	if err != nil {
+		t.Fatalf("AddObservation obs2: %v", err)
+	}
+	obs2, _ := s.GetObservation(obs2ID)
+
+	h := handleRelate(s)
+	req := mcppkg.CallToolRequest{Params: mcppkg.CallToolParams{Arguments: map[string]any{
+		"source_sync_id": obs1.SyncID,
+		"target_sync_id": obs2.SyncID,
+		"relation":        "invalid_verb",
+	}}}
+
+	res, err := h(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected tool error for invalid relation verb")
+	}
+}
+
+func TestHandleRelate_MissingSourceID(t *testing.T) {
+	s := newMCPTestStore(t)
+
+	h := handleRelate(s)
+	req := mcppkg.CallToolRequest{Params: mcppkg.CallToolParams{Arguments: map[string]any{
+		"target_sync_id": "some-sync-id",
+		"relation":        "related",
+	}}}
+
+	res, err := h(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected tool error when source_sync_id is missing")
+	}
+}
+
 func TestHandleCapturePassiveDefaultsSourceAndSession(t *testing.T) {
 	s := newMCPTestStore(t)
 	h := handleCapturePassive(s, MCPConfig{}, NewSessionActivity(10*time.Minute))
@@ -962,6 +1079,7 @@ func TestResolveToolsAgentProfile(t *testing.T) {
 		"mem_update",          // skills explicitly say "use mem_update when you have an exact ID to correct"
 		"mem_current_project", // added REQ-313: discovery tool recommended first call
 		"mem_judge",           // REQ-003: conflict verdict tool (Phase D)
+		"mem_relate",          // memory-enhancements: create relations between observations
 	}
 	for _, tool := range expectedTools {
 		if !result[tool] {
@@ -1006,13 +1124,13 @@ func TestResolveToolsCombinedProfiles(t *testing.T) {
 		t.Fatal("expected non-nil allowlist for combined profiles")
 	}
 
-	// Should have all 17 tools (16 prior + mem_judge added in Phase D)
+	// Should have all 18 tools (16 prior + mem_judge added in Phase D + mem_relate added in memory-enhancements)
 	allTools := []string{
 		"mem_save", "mem_search", "mem_context", "mem_session_summary",
 		"mem_session_start", "mem_session_end", "mem_get_observation",
 		"mem_suggest_topic_key", "mem_capture_passive", "mem_save_prompt",
 		"mem_update", "mem_delete", "mem_stats", "mem_timeline", "mem_merge_projects",
-		"mem_current_project", "mem_judge",
+		"mem_current_project", "mem_judge", "mem_relate",
 	}
 	for _, tool := range allTools {
 		if !result[tool] {
@@ -1598,7 +1716,7 @@ func TestNewServerWithToolsNilRegistersAll(t *testing.T) {
 		"mem_session_start", "mem_session_end", "mem_get_observation",
 		"mem_suggest_topic_key", "mem_capture_passive", "mem_save_prompt",
 		"mem_update", "mem_delete", "mem_stats", "mem_timeline", "mem_merge_projects",
-		"mem_current_project", "mem_judge",
+		"mem_current_project", "mem_judge", "mem_relate",
 	}
 
 	for _, name := range allTools {
@@ -1637,14 +1755,14 @@ func TestNewServerBackwardsCompatible(t *testing.T) {
 	srv := NewServer(s)
 	tools := srv.ListTools()
 
-	// 13 agent + 4 admin = 17 total (mem_judge added in Phase D)
-	if len(tools) != 17 {
-		t.Errorf("NewServer should register all 17 tools, got %d", len(tools))
+	// 14 agent + 4 admin = 18 total (mem_judge added in Phase D + mem_relate added in memory-enhancements)
+	if len(tools) != 18 {
+		t.Errorf("NewServer should register all 18 tools, got %d", len(tools))
 	}
 }
 
 func TestProfileConsistency(t *testing.T) {
-	// Verify that agent + admin = all 16 tools
+	// Verify that agent + admin = all 18 tools
 	combined := make(map[string]bool)
 	for tool := range ProfileAgent {
 		combined[tool] = true
@@ -1653,9 +1771,9 @@ func TestProfileConsistency(t *testing.T) {
 		combined[tool] = true
 	}
 
-	// 13 agent + 4 admin = 17 total (mem_judge added in Phase D)
-	if len(combined) != 17 {
-		t.Errorf("agent + admin should cover all 17 tools, got %d", len(combined))
+	// 14 agent + 4 admin = 18 total (mem_judge added in Phase D + mem_relate added in memory-enhancements)
+	if len(combined) != 18 {
+		t.Errorf("agent + admin should cover all 18 tools, got %d", len(combined))
 	}
 
 	// Verify no overlap between profiles
@@ -1980,9 +2098,9 @@ func TestNewServerWithConfig(t *testing.T) {
 		t.Fatal("expected MCP server instance")
 	}
 	tools := srv.ListTools()
-	// Should have all 17 tools (13 agent + 4 admin; mem_judge added in Phase D)
-	if len(tools) != 17 {
-		t.Errorf("NewServerWithConfig should register all 17 tools, got %d", len(tools))
+	// Should have all 18 tools (14 agent + 4 admin + mem_judge added in Phase D + mem_relate added in memory-enhancements)
+	if len(tools) != 18 {
+		t.Errorf("NewServerWithConfig should register all 18 tools, got %d", len(tools))
 	}
 }
 

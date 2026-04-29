@@ -96,6 +96,7 @@ var ProfileAgent = map[string]bool{
 	"mem_update":            true, // update observation by ID — skills say "use mem_update when you have an exact ID to correct"
 	"mem_current_project":   true, // detect current project — recommended first call for agents (REQ-313)
 	"mem_judge":             true, // record verdict on a pending memory conflict (REQ-003, Phase D)
+	"mem_relate":            true, // create relations between observations (memory-enhancements)
 }
 
 // ProfileAdmin contains tools for TUI, dashboards, and manual curation
@@ -742,6 +743,37 @@ Re-judging an already-judged ID overwrites the verdict (deliberate revision).`),
 				),
 			),
 			queuedWriteHandler(writeQueue, handleJudge(s, activity)),
+		)
+	}
+
+	// ─── mem_relate (profile: agent, deferred) ────────────────────────────
+	if shouldRegister("mem_relate", allowlist) {
+		srv.AddTool(
+			mcp.NewTool("mem_relate",
+				mcp.WithDescription("Create a relation between two observations using their sync_ids."),
+				mcp.WithDeferLoading(true),
+				mcp.WithTitleAnnotation("Relate Observations"),
+				mcp.WithReadOnlyHintAnnotation(false),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(false),
+				mcp.WithOpenWorldHintAnnotation(false),
+				mcp.WithString("source_sync_id",
+					mcp.Required(),
+					mcp.Description("sync_id of source observation"),
+				),
+				mcp.WithString("target_sync_id",
+					mcp.Required(),
+					mcp.Description("sync_id of target observation"),
+				),
+				mcp.WithString("relation",
+					mcp.Required(),
+					mcp.Description("Relation type: supersedes, related, conflicts_with, compatible, scoped, not_conflict"),
+				),
+				mcp.WithString("reason",
+					mcp.Description("Optional reason for the relation"),
+				),
+			),
+			queuedWriteHandler(writeQueue, handleRelate(s)),
 		)
 	}
 }
@@ -1610,6 +1642,73 @@ func handleJudge(s *store.Store, activity *SessionActivity) server.ToolHandlerFu
 		}
 		out, _ := jsonMarshal(envelope)
 		return mcp.NewToolResultText(string(out)), nil
+	}
+}
+
+// handleRelate implements mem_relate. It creates a relation between two
+// observations using their sync_ids and a valid relation verb.
+//
+// Tool description contract:
+//   "Create a relation between two observations. Uses existing memory_relations table.
+//    Parameters: source_sync_id, target_sync_id, relation, reason (all strings)"
+func handleRelate(s *store.Store) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		sourceSyncID, _ := req.GetArguments()["source_sync_id"].(string)
+		targetSyncID, _ := req.GetArguments()["target_sync_id"].(string)
+		relation, _ := req.GetArguments()["relation"].(string)
+
+		if sourceSyncID == "" {
+			return mcp.NewToolResultError("source_sync_id is required"), nil
+		}
+		if targetSyncID == "" {
+			return mcp.NewToolResultError("target_sync_id is required"), nil
+		}
+		if relation == "" {
+			return mcp.NewToolResultError("relation is required"), nil
+		}
+
+	// Validate relation verb.
+	if !store.IsValidRelationVerb(relation) {
+		return mcp.NewToolResultError(
+			fmt.Sprintf("invalid relation verb %q — must be one of: related, compatible, scoped, conflicts_with, supersedes, not_conflict", relation),
+		), nil
+	}
+
+	// Optional reason.
+	var reason *string
+	if v, ok := req.GetArguments()["reason"].(string); ok && v != "" {
+		reason = &v
+	}
+
+	relSyncID := store.NewSyncID("rel")
+	_, err := s.SaveRelation(store.SaveRelationParams{
+		SyncID:   relSyncID,
+		SourceID: sourceSyncID,
+		TargetID: targetSyncID,
+		Relation: relation,
+	})
+	if err != nil {
+		return mcp.NewToolResultError("Failed to create relation: " + err.Error()), nil
+	}
+
+	// If reason provided, update the relation row.
+	if reason != nil {
+		err = s.UpdateRelationReason(relSyncID, *reason)
+		if err != nil {
+			// Non-fatal: relation was created, just reason update failed.
+			fmt.Fprintf(os.Stderr, "mem_relate: failed to update reason: %v\n", err)
+		}
+	}
+
+		envelope := map[string]any{
+			"sync_id":        relSyncID,
+			"source_sync_id": sourceSyncID,
+			"target_sync_id": targetSyncID,
+			"relation":       relation,
+			"status":         "created",
+		}
+		out, _ := jsonMarshal(envelope)
+		return mcp.NewToolResultText("relation created\n" + string(out)), nil
 	}
 }
 
